@@ -1,5 +1,3 @@
-import AgoraRTC from "agora-rtc-sdk-ng";
-import AgoraRTM from 'agora-rtm-sdk';
 import * as Control from './Control'
 
 // Control.show();
