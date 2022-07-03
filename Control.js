@@ -11,8 +11,14 @@ export {
     initRtm,
     initRtcPre,
 }
-
-
+// 服务器信息
+let server_info = {
+    //后端公共HTTP接口-头信息
+    header_X_Source_Type : "11",
+    header_X_Project_Id : "6",
+    header_X_Access : "imzgoframe",
+    ipPort:"127.0.0.1",
+}
 
 let rtc = {
     localAudioTrack: null,
@@ -20,6 +26,11 @@ let rtc = {
     client: null,
     remoteVideoTrack:null,
 };
+
+let rtm = {
+    client : null,
+    channel : null,
+}
 
 let options = {
     appId: "8ff429463a234c7bae327d74941a5956",
@@ -35,35 +46,8 @@ let options = {
     },
 }
 
-
-const client = AgoraRTM.createInstance(options.appId);
-let channel = client.createChannel(options.channel);
-
-//截取 - 对方视频 - 图片
-let screenshots = function (){
-    var imagedata = rtc.remoteVideoTrack.getCurrentFrameData();
-
-    // var canvas = document.createElement('canvas');
-    var  canvas = document.getElementById("my_canvas");
-    var ctx = canvas.getContext('2d');
-    canvas.width = imagedata.width;
-    canvas.height = imagedata.height;
-    ctx.putImageData(imagedata, 0, 0);
-
-    var resized_img = new Image();
-    resized_img.src = canvas.toDataURL("image/jpeg",0.7);
-
-    request_service(resized_img);
-    // var image = new Image();
-    // image.src = canvas.toDataURL();
-
-    // document.body.appendChild(image);
-    // console.log("image:=========",image);
-
-}
-
 let initRtcPre = function(){
-    console.log("initRtcPre~2~33322:");
+    console.log("initRtcPre:");
     // Create an AgoraRTCClient object.
     rtc.client = AgoraRTC.createClient({mode: "rtc", codec: "vp8"});
 
@@ -76,7 +60,7 @@ let initRtcPre = function(){
         if (mediaType === "video") {
             // Get the RemoteVideoTrack object in the AgoraRTCRemoteUser object.
             const remoteVideoTrack = user.videoTrack;
-            rtc.remoteVideoTrack = remoteVideoTrack;
+            rtc.remoteVideoTrack = remoteVideoTrack;//给外部使用
             // Dynamically create a container in the form of a DIV element for playing the remote video track.
             const remotePlayerContainer = document.createElement("div");
             // Specify the ID of the DIV container. You can use the uid of the remote user.
@@ -114,7 +98,7 @@ let initRtcPre = function(){
 
 
 let initRtc = function (){
-    console.log("initRtc:");
+    console.log("initRtc :");
 
     document.getElementById("join").onclick = async function () {
         // Join an RTC channel.
@@ -155,18 +139,25 @@ let initRtc = function (){
         // Leave the channel.
         await rtc.client.leave();
     };
-
+    //给外部节点绑定点击事件(截图)
     var bnt_screenshots = document.getElementById("bnt_screenshots");
     bnt_screenshots.addEventListener('click',screenshots);
 }
 
 let initRtm = function (){
     console.log("initRtm:");
+
+    rtm.client = AgoraRTM.createInstance(options.appId);
+    rtm.channel = rtm.client.createChannel(options.channel);
+
+    $("#appId").html(options.appId);
+    $("#channel_name").html(options.channel);
+    document.getElementById("userID").value = options.rtm_user.uid;
     // 按钮逻辑
     // 登录
     document.getElementById("login").onclick = async function () {
         options.rtm_user.uid = document.getElementById("userID").value.toString()
-        await client.login(options.rtm_user)
+        await rtm.client.login(options.rtm_user)
     }
 
 
@@ -174,8 +165,8 @@ let initRtm = function (){
     document.getElementById("rtm_join").onclick = async function () {
         // Channel event listeners
         // Display channel messages
-        await channel.join().then (() => {
-            document.getElementById("log").appendChild(document.createElement('div')).append("You have successfully joined channel " + channel.channelId)
+        await rtm.channel.join().then (() => {
+            document.getElementById("log").appendChild(document.createElement('div')).append("You have successfully joined channel " + rtm.channel.channelId)
         })
     }
 
@@ -184,10 +175,10 @@ let initRtm = function (){
 
         let channelMessage = document.getElementById("channelMessage").value.toString()
 
-        if (channel != null) {
-            await channel.sendMessage({ text: channelMessage }).then(() => {
+        if (rtm.channel != null) {
+            await rtm.channel.sendMessage({ text: channelMessage }).then(() => {
 
-                    document.getElementById("log").appendChild(document.createElement('div')).append("Channel message: " + channelMessage + " from " + channel.channelId)
+                    document.getElementById("log").appendChild(document.createElement('div')).append("Channel message: " + channelMessage + " from " + rtm.channel.channelId)
 
                 }
 
@@ -195,32 +186,39 @@ let initRtm = function (){
         }
     }
 }
+//截取 - 对方视频 - 图片
+let screenshots = function (){
+    var videoFrameImgData = rtc.remoteVideoTrack.getCurrentFrameData();
+    // var canvas = document.createElement('canvas');
+    var  canvas = document.getElementById("my_canvas");
+    var ctx = canvas.getContext('2d');
+    canvas.width = videoFrameImgData.width;
+    canvas.height = videoFrameImgData.height;
+    ctx.putImageData(videoFrameImgData, 0, 0);
 
-//将截图后图片 推送到服务端
-let request_service = function (resized_img){
-    console.log("request_service resized_img:",resized_img);
+    var myImg = new Image();
+    myImg.src = canvas.toDataURL("image/jpeg",0.7);
 
-    // var form = new FormData();
-    // form.append("stream", resized_img.src, "a.jpg");
-    // 后端公共HTTP接口-头信息
-    var header_X_Source_Type = "11";
-    var header_X_Project_Id = "6";
-    var header_X_Access = "imzgoframe";
+    request_service(myImg);
+}
+//将截图后图片 推送到服务端 ，服务端返回图片的URL，再通过RTM推送到对端
+let request_service = function (imgObj){
+    console.log("request_service imgObj:",imgObj);
 
     $.ajax({
         headers: {
-            "X-Source-Type": header_X_Source_Type,
-            "X-Project-Id": header_X_Project_Id,
-            "X-Access": header_X_Access,
+            "X-Source-Type": server_info.header_X_Source_Type,
+            "X-Project-Id": server_info.header_X_Project_Id,
+            "X-Access": server_info.header_X_Access,
         },
         // dataType: "json",
-        type: "POST",
         // data: JSON.stringify({"path": "apache-tomcat-8.5.81-fulldocs.tar.gz"}),
         // data:form,
-        data :{"stream":resized_img.src},
         // contentType: "application/json;charset=utf-8",
-        url: "http://127.0.0.1:1111/file/upload/img/one/stream/base64",
         // url: "http://localhost:1111/persistence/file/upload/stream",
+        type: "POST",
+        data :{"stream":imgObj.src},
+        url: "http://"+server_info.ipPort+"/file/upload/img/one/stream/base64",
         success: function(backData){
             // alert("ok");
             console.log("backData:",backData);
@@ -230,11 +228,11 @@ let request_service = function (resized_img){
             }
 
             var r= Math.random();
-            var url = "http://192.168.192.146:1111/"+backData.data.local_url + "?r="+r;
+            var url = "http://"+server_info.ipPort+"/"+backData.data.local_url + "?r="+r;
             console.log("url:",url);
 
-            channel.sendMessage({ text: url }).then(() => {
-                document.getElementById("log").appendChild(document.createElement('div')).append("Channel message: " + url + " from " + channel.channelId)
+            rtm.channel.sendMessage({ text: url }).then(() => {
+                document.getElementById("log").appendChild(document.createElement('div')).append("Channel message: " + url + " from " + rtm.channel.channelId)
             });
 
         }
